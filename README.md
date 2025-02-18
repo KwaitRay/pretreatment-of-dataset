@@ -1,4 +1,11 @@
 # pretreatment of dataset
+## requirement
+### 编程语言：Python 3.10.16
+### 深度学习框架：PyTorch. torch Version: 2.5.1+cu121
+### 模型架构：Transformer。
+### 辅助工具：Matplotlib 3.7.2（可视化）,NumPy 1.24.3（数组运算）,Pandas 2.0.3（数据集读取）
+### 训练工具：GPU（CUDA 支持）。
+### 代码管理：Git、VS Code。
 ## 一.预处理文本序列数据集
 提前载入预训练过程中需要用到的库，其中matplotlib主要用于可视化
 ```python
@@ -278,6 +285,7 @@ from d2l import torch as d2l
 import pandas as pd
 import math
 import matplotlib.pyplot as plot
+import numpy as np
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = 'TRUE'
 ```
@@ -287,29 +295,114 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = 'TRUE'
 通过在互联网上收集数据集，发现了股票数据略有缺失，但是获取途径相对方便的tushare数据集，常见针对tushare数据集进行处理的操作可以参考本作者的stock_analysis repository仓库中的README.md文档
 ### 1.加载股票数据集
 ```python
-
+# 加载股票数据
+data = pd.read_csv("D:\\Offer\\AI\\data_analysis\\stockdata_analysis\\SH_SZ.csv")
+#移除读取文件时可能自动添加的索引列
+if 'index' in data.columns:
+    data = data.drop(columns=['index'])
 ```
 ### 2.日期数据类型转换（datetime类型）
 ```python
+# 假设 data 是包含日期列和股票数据的 DataFrame
+# 将日期列转换为 datetime 类型,并将日期变为%Y%m%d的格式，否则无法正确读取
+data['trade_date'] = pd.to_datetime(data['trade_date'],format='%Y%m%d')
+data = data.sort_values(by='trade_date').reset_index(drop=True)
+# print("这是日期范围：")
+# print(data['trade_date'].min(), data['trade_date'].max())  # 确保日期范围是正确的
+# print(data.head())  # 打印前几行数据，查看日期是否正确
 
+# 获取数据中的日期范围
+start_date = data['trade_date'].min()
+end_date = data['trade_date'].max()
+
+# 创建一个完整的日期范围
+full_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+# 通过日期范围和原始数据的日期进行合并
+data = data.set_index('trade_date').reindex(full_date_range)
+
+# 将缺失值填充为 NaN（这里已经是NaN了，以下是为确保可操作性）
+data = data.reset_index()
+data = data.rename(columns={'index': 'trade_date'})
+
+# 填充缺失值（滑动平均）!!!还没看到调整
+# 选择数值型列进行滑动平均填充，每次取相邻的三个值作为滑动窗口，求平均值，然后进行填充
+numeric_columns = data.select_dtypes(include=[float, int]).columns
+data[numeric_columns] = data[numeric_columns].rolling(window=3, min_periods=1).mean()
 ```
-### 3.跳过编号和日期列，将数值列转化为numpy数组
+### 3.跳过编号和日期列，将数值列通过MinMaxScaler归一化（(X-Xmin)/(Xmax-Xmin)归一化后范围位于(0,1)）后转化为numpy数组
 ```python
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+# 假设数据的数值列从第1列到最后一列（跳过编号和日期）
+data.iloc[:, 2:] = scaler.fit_transform(data.iloc[:, 2:])
 
+# 转为 NumPy 数组
+features = data.iloc[:, 2:].values  # 跳过编号和日期列
+num_steps = 10  # 序列步长
+
+batch_size = 32
+#特征数为data的列数-3(包括序号，股票代码以及日期)，日期算特征吗？？？
+num_features = data.shape[1]-2
 ```
 ### 4.构建样本序列
 ```python
-
+# 构造样本序列
+def create_sequences(data, num_steps):
+    if len(data) <= num_steps:
+        return np.array([])  # 避免数据不足导致错误
+    sequences = []
+    for i in range(len(data) - num_steps):
+        sequences.append(data[i:i + num_steps])
+    return np.array(sequences)
+sequences = create_sequences(features, num_steps)
 ```
-### 5.自动分区划分数据
+### 5.自动填充划分数据
 ```python
-
+# 自动划分数据
+sequences = sequences.reshape(-1, num_steps, num_features)  # 自动填充批次数
+sequences = sequences[:(len(data) // num_steps) * num_steps]  # 截断多余数据
 ```
 ### 6.训练集与测试集划分
 ```python
-
+# 训练集和测试集划分
+train_size = int(len(sequences) * 0.8)
+train_data = sequences[:train_size]
+test_data = sequences[train_size:]
 ```
 ### 7.将numpy数组转换为tensor,构造DataLoader
 ```python
+#构造数据
+stock_sequences = sequences
+#stock_sequences = create_sequences(features, num_steps)
+next_day_prices = features[num_steps:, 6]  # 收盘价列作为目标值（第7列是收盘价）
+#打印并检查空样本生成原因
+# print(f"features shape: {features.shape}")
+# print(f"num_steps: {num_steps}")
+# print(f"generated sequences shape: {sequences.shape}")
+# print(f"next_day_prices shape: {next_day_prices.shape}")
+
+sequence_valid_lengths = np.full(stock_sequences.shape[0], num_steps)  # 每个子序列长度
+next_day_valid_lengths = np.ones(next_day_prices.shape[0])  # 目标值有效长度为1
+print(f"stock_sequences shape: {stock_sequences.shape}")
+print(f"next_day_prices shape: {next_day_prices.shape}")
+print(f"sequence_valid_lengths: {sequence_valid_lengths}")
+print(f"next_day_valid_lengths: {next_day_valid_lengths}")
+
+# 转换为 Tensor
+data_arrays = (
+    torch.tensor(stock_sequences, dtype=torch.float32),
+    torch.tensor(sequence_valid_lengths, dtype=torch.int64),
+    torch.tensor(next_day_prices, dtype=torch.float32),
+    torch.tensor(next_day_valid_lengths, dtype=torch.int64)
+)
+# 构造 DataLoader
+dataset = torch.utils.data.TensorDataset(*data_arrays)
+if len(dataset) == 0:
+    print("数据集为空，检查生成过程")
+else:
+    print(f"数据集样本数量: {len(dataset)}")
+#shuffle=True表示在每个训练周期开始时都会进行随机打乱操作，从而提高模型泛化能力，drop_last用于控制是否丢去最后一个不完整批次
+data_iter = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True,drop_last=True)
 
 ```
