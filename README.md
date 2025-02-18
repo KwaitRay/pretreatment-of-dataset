@@ -271,10 +271,45 @@ for batch in data_iter:
     break
 ```
 ## 二.预处理数值序列数据(以多特征股票数据为例)
+```python
+import torch
+from torch import nn
+from d2l import torch as d2l
+import pandas as pd
+import math
+import matplotlib.pyplot as plot
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = 'TRUE'
+```
+### ！预处理数值序列数据背景以及作用分析
+常规的进行股票数据处理的模型为RNN模型，将连续多日的数据作为单元进行预测，但是这种方式往往不能充分利用大量股票交易过程中的特征值，包括开盘价，交易量，交易总额，交易高价和交易低价，涨跌幅度等，因此考虑引入transformer模型以及模型中涉及的注意力机制，尝试挖掘各特征值之间的潜在练习，由于完整的transformer模型是seq2seq模型，输入输出都是经过词元转化后的序列数据，这与股票预测(回归类型任务)的目标有一定区别，因此经过多次尝试，最终在GPT模型的启发下，确定使用TransformerDecoder模块，针对各特征值进行归一化后，并在最终得到的预测特征值后通过一个全连接层，将序列数据转换成一个数值数据，从而实现回归预测结果。
+
+通过在互联网上收集数据集，发现了股票数据略有缺失，但是获取途径相对方便的tushare数据集，常见针对tushare数据集进行处理的操作可以参考本作者的stock_analysis repository仓库中的README.md文档
 ### 1.加载股票数据集
+```python
+
+```
 ### 2.日期数据类型转换（datetime类型）
+```python
+
+```
 ### 3.跳过编号和日期列，将数值列转化为numpy数组
+```python
+
+```
 ### 4.构建样本序列
+```python
+
+```
 ### 5.自动分区划分数据
+```python
+
+```
 ### 6.训练集与测试集划分
+```python
+
+```
 ### 7.将numpy数组转换为tensor,构造DataLoader
+```python
+
+```
