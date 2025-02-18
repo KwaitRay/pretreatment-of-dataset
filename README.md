@@ -32,12 +32,10 @@ def download(url, folder='../data', sha1_hash=None):
     with open(fname, 'wb') as f:
         f.write(r.content)
     return fname
-
+#下载并解压文件
 def download_extract(name, folder=None):
-    """Download and extract a zip/tar file.
-
-    Defined in :numref:`sec_utils`"""
     fname = download(name)
+    #获取文件路径，并通过splitext，将文件路径拆分成文件名和文件后缀，然后根据后缀类型，选择对应的文件解压方式进行解压
     base_dir = os.path.dirname(fname)
     data_dir, ext = os.path.splitext(fname)
     if ext == '.zip':
@@ -46,7 +44,9 @@ def download_extract(name, folder=None):
         fp = tarfile.open(fname, 'r')
     else:
         assert False, 'Only zip/tar files can be extracted.'
+    #将压缩文件夹中的所有内容解压到base_dir下
     fp.extractall(base_dir)
+    #如果传入参数提供了文件保存的子目录名folder,就将base_dir和folder直接进行链接，如果不是，就将
     return os.path.join(base_dir, folder) if folder else data_dir
 
 #将ptb数据集的下载链接以及其校验和（哈希值）加入DATA_HUB中,然后再解压并获取文件路径，打开文件，并将文件中的字符序列按行分割，并分解为一个个的单词，并以列表的形式返回
@@ -61,7 +61,37 @@ def read_ptb():
     return [line.split() for line in raw_text.split('\n')]
 ```
 ### 2.下采样
+下采样是针对于文本序列中大量价值较低的高频词进行设计的采样方式，根据词频适当移除部分高频词
+```python
+#进行下采样，适当移除部分高频词，频率越高，移除（return false,比较式不成立）概率越大，用random模块增加随机性
+#步骤：先分别统计各句子中单词词频，并累积得到总单词数，构建保留词元算法，返回采样后的词元和词频表
+#subsample,sentences,vocab,unk,cp,counter,count_corpos,num_tokens，keep,subsampled
+def subsample(sentences,vocab):
+    #将sentences转化未词元列表，并且排除未知词元<unk>
+    sentences = [[token for token in line if vocab[token]!=vocab.unk] for line in sentences]
+    counter = cp.count_corpus(sentences)
+    #counter是个列表，不能直接累计
+    num_tokens = sum(counter.values())
+    def keep(token):
+        return (random.uniform(0,1)<math.sqrt(1e-4/counter[token]*num_tokens))
+    return ([[token for token in line if keep(token)]for line in sentences],counter)
+subsampled, counter = subsample(sentences,vocab)
+#绘制出的图像，横坐标表示词频，经过下采样之后，高词频的单词基本都变成低词频了，总体词频集中在低词频区域
+d2l.show_list_len_pair_hist(['origin','subsampled'],'#tokens per sentence','count',sentences,subsampled)
+plot.show()
+
+#创建一个进行词元频率先后比较的函数，在词元列表中逐个获取单词，然后进行统计
+def compare_counts(token):
+    return (f'"{token}"的数量:'
+    f'former={sum([l.count(token) for l in sentences])},'
+    f'subsampled={sum([l.count(token) for l in subsampled])}')
+print(compare_counts('the'))
+#逐行获取下采样后的词元，并通过vocab转换成向量形式,最后得到一个张量列表
+corpos = [vocab[line]for line in subsampled]
+print(corpos[:3])
+```
 ### 3.获取词汇表
+
 ### 4.中心词和上下文提取
 ### 5.随机采样
 ### 6.负采样（以权重参数为基础）
